@@ -125,7 +125,8 @@ except ImportError:
 
 
 cdef class Window:
-    def __init__(self, title, resolution=(0, 0), flags=0, depth=0, pos=(SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED)):
+    def __init__(self, title, resolution=(0, 0), flags=0, depth=0, pos=(SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED), Surface shape=None):
+        cdef SDL_WindowShapeMode shape_mode
 
         if not isinstance(title, bytes):
             title = title.encode("utf-8")
@@ -155,10 +156,31 @@ cdef class Window:
                     SDL_SetWindowTitle(self.window, title)
 
         if not self.window:
-            self.window = SDL_CreateWindow(
-                title,
-                pos[0], pos[1],
-                resolution[0], resolution[1], flags | gl_flag)
+
+            flags |= SDL_WINDOW_HIDDEN
+
+            if shape is not None:
+
+                shape_mode.mode = ShapeModeDefault
+
+                self.window = SDL_CreateShapedWindow(
+                    title,
+                    pos[0], pos[1],
+                    resolution[0], resolution[1], flags | gl_flag)
+
+                SDL_SetWindowShape(self.window, shape.surface, &shape_mode)
+
+            else:
+
+                self.window = SDL_CreateWindow(
+                    title,
+                    pos[0], pos[1],
+                    resolution[0], resolution[1], flags | gl_flag)
+
+            if pos != (SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED):
+                SDL_SetWindowPosition(self.window, pos[0], pos[1])
+
+            SDL_ShowWindow(self.window)
 
         if not self.window:
             raise error()
@@ -317,6 +339,8 @@ cdef class Window:
 
         if self.gl_context == NULL:
             raise error()
+
+        SDL_GL_MakeCurrent(self.window, self.gl_context)
 
         return True
 

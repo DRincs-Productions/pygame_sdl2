@@ -34,19 +34,22 @@ include "event_names.pxi"
 ACTIVEEVENT = SDL_LASTEVENT - 1
 VIDEORESIZE = SDL_LASTEVENT - 2
 VIDEOEXPOSE = SDL_LASTEVENT - 3
+WINDOWMOVED = SDL_LASTEVENT - 4
+# (Do not add events here.)
 
 event_names[ACTIVEEVENT] = "ACTIVEEVENT"
 event_names[VIDEORESIZE] = "VIDEORESIZE"
 event_names[VIDEOEXPOSE] = "VIDEOEXPOSE"
+event_names[WINDOWMOVED] = "WINDOWMOVED"
 
 # This is used for events posted to the event queue. This won't be returned
 # to the user - it's just used internally, with the event object itself
 # giving the type.
 cdef unsigned int POSTEDEVENT
-POSTEDEVENT = SDL_LASTEVENT - 4
+POSTEDEVENT = SDL_LASTEVENT - 5
 
 # The maximum number of a user-defined event.
-USEREVENT_MAX = SDL_LASTEVENT - 5
+USEREVENT_MAX = SDL_LASTEVENT - 6
 
 # If true, the mousewheel is mapped to buttons 4 and 5. Otherwise, a
 # MOUSEWHEEL event is created.
@@ -66,7 +69,7 @@ class EventType(object):
         self.__dict__.update(kwargs)
 
     def __repr__(self):
-        if SDL_USEREVENT <= self.type < VIDEOEXPOSE:
+        if SDL_USEREVENT <= self.type < WINDOWMOVED:
             ename = "UserEvent%d" % (self.type - SDL_USEREVENT)
         else:
             try:
@@ -196,6 +199,15 @@ cdef make_textediting_event(SDL_TextEditingEvent *e):
     except UnicodeDecodeError:
         return EventType(e.type, text='', start=e.start, length=e.length)
 
+cdef make_drop_event(SDL_DropEvent *e):
+    if e.file:
+        file = e.file.decode("utf-8")
+        SDL_free(e.file)
+    else:
+        file = None
+
+    return EventType(e.type, file=file, timestamp=e.timestamp, window_id=e.windowID)
+
 cdef make_window_event(SDL_WindowEvent *e):
     # SDL_APPMOUSEFOCUS
     if e.event == SDL_WINDOWEVENT_ENTER:
@@ -220,6 +232,9 @@ cdef make_window_event(SDL_WindowEvent *e):
 
     elif e.event == SDL_WINDOWEVENT_EXPOSED:
         return EventType(VIDEOEXPOSE)
+
+    elif e.event == SDL_WINDOWEVENT_MOVED:
+        return EventType(WINDOWMOVED, pos=(e.data1, e.data2), x=e.data1, y=e.data2)
 
     return EventType(SDL_WINDOWEVENT, event=e.event, data1=e.data1, data2=e.data2)
 
@@ -261,6 +276,8 @@ cdef make_event(SDL_Event *e):
         return EventType(e.type, touchId=e.tfinger.touchId, fingerId=e.tfinger.fingerId, touch_id=e.tfinger.touchId, finger_id=e.tfinger.fingerId, x=e.tfinger.x, y=e.tfinger.y, dx=e.tfinger.dx, dy=e.tfinger.dy, pressure=e.tfinger.pressure)
     elif e.type == SDL_MULTIGESTURE:
         return EventType(e.type, touchId=e.mgesture.touchId, dTheta=e.mgesture.dTheta, dDist=e.mgesture.dDist, x=e.mgesture.x, y=e.mgesture.y, numFingers=e.mgesture.numFingers, touch_id=e.mgesture.touchId, rotated=e.mgesture.dTheta, pinched=e.mgesture.dDist, num_fingers=e.mgesture.numFingers)
+    elif e.type in (SDL_DROPFILE, SDL_DROPTEXT, SDL_DROPBEGIN, SDL_DROPCOMPLETE):
+        return make_drop_event(<SDL_DropEvent*> e)
     elif e.type == POSTEDEVENT:
         o = <object> e.user.data1
         Py_DECREF(o)
@@ -449,6 +466,9 @@ def get_blocked(t):
 
 def set_grab(on):
     SDL_SetWindowGrab(main_window.window, on)
+
+    if SDL_ShowCursor(SDL_QUERY) == SDL_DISABLE:
+        SDL_SetRelativeMouseMode(on)
 
 def get_grab():
     return SDL_GetWindowGrab(main_window.window)
